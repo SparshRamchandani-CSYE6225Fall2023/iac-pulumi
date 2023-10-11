@@ -1,0 +1,6 @@
+name: assignment-4
+runtime: nodejs
+description: Code to create a IAC code
+config:
+  aws:profile: root
+  assignment-4:vpcCidrBlock: 10.0.0.0/16
