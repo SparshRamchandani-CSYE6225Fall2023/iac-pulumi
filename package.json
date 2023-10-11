@@ -1,0 +1,11 @@
+{
+    "name": "assignment-2",
+    "main": "index.ts",
+    "devDependencies": {
+        "@types/node": "^16"
+    },
+    "dependencies": {
+        "@pulumi/aws": "^6.4.0",
+        "@pulumi/pulumi": "^3.88.0"
+    }
+}

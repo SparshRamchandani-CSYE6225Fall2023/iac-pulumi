@@ -1,0 +1,27 @@
+// list of all the stack available
+pulumi stack ls
+
+<!-- //ensure that there is no stack selected whenever you are trying to create a new stack, you can do that by running the ls command and check if there is astriek infront of any stack name ex: dev* -->
+
+//select the stack
+pulumi stack select dev 
+
+//unselect the stack eg: pulumi stack unselect --stack dev
+pulumi stack unselect --stack stack-name
+
+//create a new stack
+pulumi stack 
+
+
+//set the configuration for aws
+pulumi config set aws:profile dev
+pulumi config set aws:region us-east-1
+
+// selec the stack and to run the code run the following command
+pulumi up
+
+//to destroy the stack
+pulumi destroy
+
+//AWS configuration
+aws configure --profile myprofile
