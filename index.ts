@@ -19,9 +19,8 @@ const vpc = new aws.ec2.Vpc("myVpc", {
 });
 
 const createVpcAndSubnets = async () => {
-
     const azs = await aws.getAvailabilityZones({ state: 'available', region: selectedRegion });
-    const availabilityZones = azs.names.slice(0, 3);
+    const availabilityZones = azs.names.slice(0, azs.names.length < 3 ? azs.names.length : 3);
 
     const { publicSubnets, privateSubnets } = availabilityZones.reduce((result: { publicSubnets: any[]; privateSubnets: any[]; }, az: any, index: number) => {
         const publicSubnet = new aws.ec2.Subnet(`publicSubnet${index}`, {
