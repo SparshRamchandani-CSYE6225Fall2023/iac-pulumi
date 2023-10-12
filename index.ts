@@ -5,8 +5,17 @@ const configure = new pulumi.Config("assignment-4");
 
 const selectedRegion = config.require("region");
 const vpcCidrBlock = configure.require("vpcCidrBlock");
+const selectedProfile = config.require("profile");
+
+var splittedCidrBlock = vpcCidrBlock.split('/');
+const vpcCidrParts = splittedCidrBlock[0].split('.');
+// console.log(selectedProfile);
+
 const vpc = new aws.ec2.Vpc("myVpc", {
     cidrBlock: vpcCidrBlock,
+    tags:{
+        Name: `${selectedProfile}-vpc`
+    }
 });
 
 const createVpcAndSubnets = async () => {
@@ -18,13 +27,21 @@ const createVpcAndSubnets = async () => {
         const publicSubnet = new aws.ec2.Subnet(`publicSubnet${index}`, {
             vpcId: vpc.id,
             availabilityZone: az,
-            cidrBlock: `10.0.${index}.0/24`,
+            cidrBlock: `${vpcCidrParts[0]}.${vpcCidrParts[1]}.${index}.${vpcCidrParts[3]}/24`,
             mapPublicIpOnLaunch: true,
+            tags:
+            {
+                Name: `${selectedProfile}-publicSubnet${index}`
+            }
         });
         const privateSubnet = new aws.ec2.Subnet(`privateSubnet${index}`, {
             vpcId: vpc.id,
             availabilityZone: az,
-            cidrBlock: `10.0.${index + 3}.0/24`,
+            cidrBlock: `${vpcCidrParts[0]}.${vpcCidrParts[1]}.${index + 3}.${vpcCidrParts[3]}/24`,
+            tags:
+            {
+                Name: `${selectedProfile}-privateSubnet${index+3}`
+            }
         });
 
         result.publicSubnets.push(publicSubnet);
@@ -35,6 +52,10 @@ const createVpcAndSubnets = async () => {
 
     const internetGateway = new aws.ec2.InternetGateway("myInternetGateway", {
         vpcId: vpc.id,
+        tags:
+        {
+            Name: `${selectedProfile}-internetGateway`
+        }
     });
 
     const [publicRouteTable, privateRouteTable] = ['public', 'private'].map(tableType => {
