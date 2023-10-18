@@ -7,9 +7,11 @@ const selectedRegion = config.require("region");
 const vpcCidrBlock = configure.require("vpcCidrBlock");
 const selectedProfile = config.require("profile");
 
+const keyName = new pulumi.Config("keyName").require("key");
+console.log(keyName)
+
 var splittedCidrBlock = vpcCidrBlock.split('/');
 var vpcMask = parseInt(splittedCidrBlock[1]);
-console.log(typeof vpcMask)
 const vpcCidrParts = splittedCidrBlock[0].split('.');
 // console.log(selectedProfile);
 
@@ -127,7 +129,7 @@ const createVpcAndSubnets = async () => {
         ami: ami.id,
         instanceType: "t2.micro",
         subnetId: publicSubnets[0].id,
-        keyName: "test-dev",
+        keyName: keyName,
         vpcSecurityGroupIds: [
             securityGroup.id,
         ],
