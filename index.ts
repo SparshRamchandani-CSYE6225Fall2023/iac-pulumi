@@ -8,6 +8,8 @@ const vpcCidrBlock = configure.require("vpcCidrBlock");
 const selectedProfile = config.require("profile");
 
 var splittedCidrBlock = vpcCidrBlock.split('/');
+var vpcMask = parseInt(splittedCidrBlock[1]);
+console.log(typeof vpcMask)
 const vpcCidrParts = splittedCidrBlock[0].split('.');
 // console.log(selectedProfile);
 
@@ -26,7 +28,7 @@ const createVpcAndSubnets = async () => {
         const publicSubnet = new aws.ec2.Subnet(`publicSubnet${index}`, {
             vpcId: vpc.id,
             availabilityZone: az,
-            cidrBlock: `${vpcCidrParts[0]}.${vpcCidrParts[1]}.${index}.${vpcCidrParts[3]}/24`,
+            cidrBlock: `${vpcCidrParts[0]}.${vpcCidrParts[1]}.${index}.${vpcCidrParts[3]}/${vpcMask+8}`,
             mapPublicIpOnLaunch: true,
             tags:
             {
@@ -36,7 +38,7 @@ const createVpcAndSubnets = async () => {
         const privateSubnet = new aws.ec2.Subnet(`privateSubnet${index}`, {
             vpcId: vpc.id,
             availabilityZone: az,
-            cidrBlock: `${vpcCidrParts[0]}.${vpcCidrParts[1]}.${index + 3}.${vpcCidrParts[3]}/24`,
+            cidrBlock: `${vpcCidrParts[0]}.${vpcCidrParts[1]}.${index + 3}.${vpcCidrParts[3]}/${vpcMask+8}`,
             tags:
             {
                 Name: `${selectedProfile}-privateSubnet${index+3}`
@@ -84,6 +86,59 @@ const createVpcAndSubnets = async () => {
     });
 
     createRoute('public', '0.0.0.0/0', internetGateway.id);
+
+    const securityGroup = new aws.ec2.SecurityGroup("application-security-group", {
+        vpcId: vpc.id,
+        ingress: [
+            {
+                cidrBlocks: ["0.0.0.0/0"],
+                protocol: "tcp",
+                fromPort: 22,
+                toPort: 22,
+            },
+            {
+                cidrBlocks: ["0.0.0.0/0"],
+                protocol: "tcp",
+                fromPort: 80,
+                toPort: 80,
+            },
+            {
+                cidrBlocks: ["0.0.0.0/0"],
+                protocol: "tcp",
+                fromPort: 443,
+                toPort: 443,
+            },
+            // Replace <YOUR_APPLICATION_PORT> with the actual port number of your application
+            {
+                cidrBlocks: ["0.0.0.0/0"],
+                protocol: "tcp",
+                fromPort: 3000,
+                toPort: 3000,
+            },
+        ],
+    });
+    
+    const ami = pulumi.output(aws.ec2.getAmi({
+        owners: ["773453770225"],
+        mostRecent: true,
+    }));
+    
+    const instance = new aws.ec2.Instance("instance", {
+        ami: ami.id,
+        instanceType: "t2.micro",
+        subnetId: publicSubnets[0].id,
+        keyName: "test-dev",
+        vpcSecurityGroupIds: [
+            securityGroup.id,
+        ],
+        rootBlockDevice: {
+            volumeSize: 25,
+            volumeType: "gp2",
+            deleteOnTermination: true,
+        },
+    });
+
+
 };
 
 createVpcAndSubnets();
