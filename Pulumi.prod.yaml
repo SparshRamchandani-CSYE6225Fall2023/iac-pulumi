@@ -1,4 +1,4 @@
 config:
   aws:profile: prod
-  aws:region: us-east-1
-  keyName:key: demoUsEast1
+  aws:region: us-west-1
+  keyName:key: demo-us-west-1

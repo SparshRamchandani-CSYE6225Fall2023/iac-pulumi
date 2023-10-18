@@ -1,4 +1,4 @@
 config:
   aws:profile: dev
-  aws:region: us-east-1
-  keyName:key: devUsEast1
+  aws:region: us-west-1
+  keyName:key: dev-us-west-1
