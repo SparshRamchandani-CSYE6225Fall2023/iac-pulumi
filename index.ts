@@ -8,7 +8,6 @@ const vpcCidrBlock = configure.require("vpcCidrBlock");
 const selectedProfile = config.require("profile");
 
 const keyName = new pulumi.Config("keyName").require("key");
-console.log(keyName)
 
 var splittedCidrBlock = vpcCidrBlock.split('/');
 var vpcMask = parseInt(splittedCidrBlock[1]);
@@ -110,7 +109,6 @@ const createVpcAndSubnets = async () => {
                 fromPort: 443,
                 toPort: 443,
             },
-            // Replace <YOUR_APPLICATION_PORT> with the actual port number of your application
             {
                 cidrBlocks: ["0.0.0.0/0"],
                 protocol: "tcp",
@@ -118,15 +116,91 @@ const createVpcAndSubnets = async () => {
                 toPort: 3000,
             },
         ],
+        egress: [
+            {
+              protocol: "-1", // All
+              fromPort: 0,
+              toPort: 0,
+              cidrBlocks: ["0.0.0.0/0"],
+            },
+          ],
     });
     
-    const ami = pulumi.output(aws.ec2.getAmi({
+    
+
+    const rdsSecurityGroup = new aws.ec2.SecurityGroup("sgRDS", {
+        description: "csye 6225RDS security group",
+        vpcId: vpc.id,
+        ingress: [
+          {
+            protocol: "tcp",
+            fromPort: 5432,
+            toPort: 5432,
+            securityGroups: [securityGroup.id],
+          },
+        ],
+        egress: [
+          {
+            protocol: "-1", // All
+            fromPort: 0,
+            toPort: 0,
+            cidrBlocks: ["0.0.0.0/0"],
+          },
+        ],
+      });
+      const dbParameterGroup = new aws.rds.ParameterGroup(
+        "db-p-group",
+        {
+          family: "postgres15",
+          description: "Custom parameter group for csye6225"
+        }
+      );
+      const dbSubnetGroup = new aws.rds.SubnetGroup("dbsubnetG", {
+        subnetIds: privateSubnets.map((subnet: { id: any; }) => subnet.id),
+        name: "csye6225",
+        tags: {
+          Name: "csye6225",
+        },
+      });
+      const rdsInstance = new aws.rds.Instance("csye6225db-instance", {
+        engine: "postgres",
+        instanceClass: "db.t3.micro",
+        engineVersion: 15,
+        allocatedStorage: 20,
+        parameterGroupName: dbParameterGroup.name,
+        storageType: "gp2",
+        dbName: "csye6225",
+        username: "csye6225",
+        password: "postgres",
+        skipFinalSnapshot: true,
+        vpcSecurityGroupIds: [rdsSecurityGroup.id],
+        dbSubnetGroupName: dbSubnetGroup.name,
+        publiclyAccessible: false,
+      });
+
+
+      const ami = pulumi.output(aws.ec2.getAmi({
         owners: ["773453770225"],
         mostRecent: true,
     }));
+
+    console.log(ami.id);
     
-    const instance = new aws.ec2.Instance("instance", {
+    const instance = new aws.ec2.Instance("web-app-server", {
         ami: ami.id,
+        userData: pulumi.interpolate `#!/bin/bash
+        sudo rm /home/admin/web-app/.env
+        sudo touch /home/admin/web-app/.env
+        sudo echo PGPORT=5432 >> /home/admin/web-app/.env
+        sudo echo PGUSER="csye6225" >> /home/admin/web-app/.env
+        sudo echo PGPASSWORD="postgres" >> /home/admin/web-app/.env
+        sudo echo PGDATABASE="csye6225" >> /home/admin/web-app/.env
+        sudo echo PGHOST=${rdsInstance.address} >> /home/admin/web-app/.env
+        sudo mv /home/admin/web-app/systemd/webapp.service /lib/systemd/system/webapp.service
+        sudo systemctl daemon-reload
+        sudo systemctl enable webapp
+        sudo systemctl start webapp
+        `,
         instanceType: "t2.micro",
         subnetId: publicSubnets[0].id,
         keyName: keyName,
@@ -136,11 +210,14 @@ const createVpcAndSubnets = async () => {
         rootBlockDevice: {
             volumeSize: 25,
             volumeType: "gp2",
-            deleteOnTermination: true,
+        },
+        disableApiTermination:false,
+        userDataReplaceOnChange:true,
+        dependsOn: [rdsInstance],
+        tags: {
+            Name: "web-app Pulumi",
         },
     });
-
-
 };
 
 createVpcAndSubnets();
