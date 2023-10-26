@@ -10,5 +10,4 @@ config:
   rds:storageType: "gp2"
   rds:dbName: "csye6225"
   rds:username: "csye6225"
-  rds:password: "postgres"
   rds:port: 5432
