@@ -2,6 +2,11 @@ const pulumi = require("@pulumi/pulumi");
 const aws = require("@pulumi/aws");
 const config = new pulumi.Config("aws");
 const configure = new pulumi.Config("assignment-4");
+const rds = new pulumi.Config("rds");
+
+const strOwners = new pulumi.Config("ami").require("owners");
+const owners = strOwners.split();
+
 
 const selectedRegion = config.require("region");
 const vpcCidrBlock = configure.require("vpcCidrBlock");
@@ -163,15 +168,15 @@ const createVpcAndSubnets = async () => {
         },
       });
       const rdsInstance = new aws.rds.Instance("csye6225db-instance", {
-        engine: "postgres",
-        instanceClass: "db.t3.micro",
-        engineVersion: 15,
-        allocatedStorage: 20,
+        engine: rds.require("engine"),
+        instanceClass: rds.require("instanceClass"),
+        engineVersion: rds.require("engineVersion"),
+        allocatedStorage: rds.require("allocatedStorage"),
         parameterGroupName: dbParameterGroup.name,
-        storageType: "gp2",
-        dbName: "csye6225",
-        username: "csye6225",
-        password: "postgres",
+        storageType: rds.require("storageType"),
+        dbName: rds.require("dbName"),
+        username: rds.require("username"),
+        password: rds.require("password"),
         skipFinalSnapshot: true,
         vpcSecurityGroupIds: [rdsSecurityGroup.id],
         dbSubnetGroupName: dbSubnetGroup.name,
@@ -180,7 +185,7 @@ const createVpcAndSubnets = async () => {
 
 
       const ami = pulumi.output(aws.ec2.getAmi({
-        owners: ["773453770225"],
+        owners: owners,
         mostRecent: true,
     }));
 
@@ -189,17 +194,13 @@ const createVpcAndSubnets = async () => {
     const instance = new aws.ec2.Instance("web-app-server", {
         ami: ami.id,
         userData: pulumi.interpolate `#!/bin/bash
-        sudo rm /home/admin/web-app/.env
-        sudo touch /home/admin/web-app/.env
-        sudo echo PGPORT=5432 >> /home/admin/web-app/.env
-        sudo echo PGUSER="csye6225" >> /home/admin/web-app/.env
-        sudo echo PGPASSWORD="postgres" >> /home/admin/web-app/.env
-        sudo echo PGDATABASE="csye6225" >> /home/admin/web-app/.env
-        sudo echo PGHOST=${rdsInstance.address} >> /home/admin/web-app/.env
-        sudo mv /home/admin/web-app/systemd/webapp.service /lib/systemd/system/webapp.service
-        sudo systemctl daemon-reload
-        sudo systemctl enable webapp
-        sudo systemctl start webapp
+        sudo rm /opt/csye6225/web-app/.env
+        sudo touch /opt/csye6225/web-app/.env
+        sudo echo PGPORT=${rds.require('port')} >> /opt/csye6225/web-app/.env
+        sudo echo PGUSER=${rds.require("username")} >> /opt/csye6225/web-app/.env
+        sudo echo PGPASSWORD=${rds.require("password")} >> /opt/csye6225/web-app/.env
+        sudo echo PGDATABASE=${rds.require("dbName")} >> /opt/csye6225/web-app/.env
+        sudo echo PGHOST=${rdsInstance.address} >> /opt/csye6225/web-app/.env
         `,
         instanceType: "t2.micro",
         subnetId: publicSubnets[0].id,
