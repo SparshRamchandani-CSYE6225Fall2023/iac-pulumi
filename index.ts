@@ -156,34 +156,52 @@ const createVpcAndSubnets = async () => {
     role: ec2Role.name,
   });
 
-  const securityGroup = new aws.ec2.SecurityGroup(
+   // Creating Load Balancer Security Group
+  const loadBalancerSecurityGroup = new aws.ec2.SecurityGroup("loadBalancerSecurityGroup", {
+    description: "Security group for the load balancer",
+    vpcId: vpc.id,
+    ingress: [
+        {
+            protocol: "tcp",
+            fromPort: 80,
+            toPort: 80,
+            cidrBlocks: ["0.0.0.0/0"],
+        },
+        {
+            protocol: "tcp",
+            fromPort: 443,
+            toPort: 443,
+            cidrBlocks: ["0.0.0.0/0"],
+        },
+    ],
+    egress: [
+      {
+          protocol: "-1", // All
+          fromPort: 0,
+          toPort: 0,
+          cidrBlocks: ["0.0.0.0/0"],
+      },
+  ],
+  });
+
+  // Creating EC2 Security Group
+  const EC2SecurityGroup = new aws.ec2.SecurityGroup(
     "application-security-group",
     {
       vpcId: vpc.id,
       ingress: [
         {
+          // securityGroups: [loadBalancerSecurityGroup.id],
           cidrBlocks: ["0.0.0.0/0"],
           protocol: "tcp",
           fromPort: 22,
           toPort: 22,
         },
         {
-          cidrBlocks: ["0.0.0.0/0"],
-          protocol: "tcp",
-          fromPort: 80,
-          toPort: 80,
-        },
-        {
-          cidrBlocks: ["0.0.0.0/0"],
-          protocol: "tcp",
-          fromPort: 443,
-          toPort: 443,
-        },
-        {
-          cidrBlocks: ["0.0.0.0/0"],
           protocol: "tcp",
           fromPort: 3000,
           toPort: 3000,
+          securityGroups: [loadBalancerSecurityGroup.id],
         },
       ],
       egress: [
@@ -197,6 +215,7 @@ const createVpcAndSubnets = async () => {
     }
   );
 
+  // Creating RDS Security Group
   const rdsSecurityGroup = new aws.ec2.SecurityGroup("sgRDS", {
     description: "csye 6225RDS security group",
     vpcId: vpc.id,
@@ -205,7 +224,7 @@ const createVpcAndSubnets = async () => {
         protocol: "tcp",
         fromPort: 5432,
         toPort: 5432,
-        securityGroups: [securityGroup.id],
+        securityGroups: [EC2SecurityGroup.id],
       },
     ],
     egress: [
@@ -228,6 +247,8 @@ const createVpcAndSubnets = async () => {
       Name: "csye6225",
     },
   });
+
+  // Creating RDS Instance
   const rdsInstance = new aws.rds.Instance("csye6225db-instance", {
     engine: rds.require("engine"),
     instanceClass: rds.require("instanceClass"),
@@ -251,58 +272,216 @@ const createVpcAndSubnets = async () => {
     })
   );
 
-  console.log(ami.id);
+  
+  const userData = pulumi.interpolate`#!/bin/bash
+  sudo rm /opt/csye6225/web-app/.env
+  sudo touch /opt/csye6225/web-app/.env
+  sudo echo ENVIRONMENT=${config.require("profile")} >> /opt/csye6225/web-app/.env
+  sudo echo PGPORT=${rds.require("port")} >> /opt/csye6225/web-app/.env
+  sudo echo PGUSER=${rds.require("username")} >> /opt/csye6225/web-app/.env
+  sudo echo PGPASSWORD=${rds.require(
+    "password"
+  )} >> /opt/csye6225/web-app/.env
+  sudo echo PGDATABASE=${rds.require(
+    "dbName"
+  )} >> /opt/csye6225/web-app/.env
+  sudo echo PGHOST=${rdsInstance.address} >> /opt/csye6225/web-app/.env
+  sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
+      -a fetch-config \
+      -m ec2 \
+      -c file:/home/cloudwatch-agent-config.json \
+      -s
+  sudo systemctl enable amazon-cloudwatch-agent
+  sudo systemctl start amazon-cloudwatch-agent
+  `;
 
-  const instance = new aws.ec2.Instance("web-app-server", {
-    ami: ami.id,
-    userData: pulumi.interpolate`#!/bin/bash
-        sudo rm /opt/csye6225/web-app/.env
-        sudo touch /opt/csye6225/web-app/.env
-        sudo echo ENVIRONMENT=${config.require("profile")} >> /opt/csye6225/web-app/.env
-        sudo echo PGPORT=${rds.require("port")} >> /opt/csye6225/web-app/.env
-        sudo echo PGUSER=${rds.require("username")} >> /opt/csye6225/web-app/.env
-        sudo echo PGPASSWORD=${rds.require(
-          "password"
-        )} >> /opt/csye6225/web-app/.env
-        sudo echo PGDATABASE=${rds.require(
-          "dbName"
-        )} >> /opt/csye6225/web-app/.env
-        sudo echo PGHOST=${rdsInstance.address} >> /opt/csye6225/web-app/.env
-        sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
-            -a fetch-config \
-            -m ec2 \
-            -c file:/opt/csye6225/web-app/configs/cloudwatch-agent-config.json \
-            -s
-        sudo systemctl enable amazon-cloudwatch-agent
-        sudo systemctl start amazon-cloudwatch-agent
-        `,
+  // Creating Launch Template
+  const launchtemplate = new aws.ec2.LaunchTemplate("launchtemplate", {
+    name: "asg_launch_config",
+    imageId: ami.id,
     instanceType: "t2.micro",
-    subnetId: publicSubnets[0].id,
     keyName: keyName,
-    iamInstanceProfile: instanceProfile.name,
-    vpcSecurityGroupIds: [securityGroup.id],
-    rootBlockDevice: {
-      volumeSize: 25,
-      volumeType: "gp2",
-    },
     disableApiTermination: false,
-    userDataReplaceOnChange: true,
     dependsOn: [rdsInstance],
+
+    iamInstanceProfile: {
+      name: instanceProfile.name,
+    },
+
+    blockDeviceMappings: [
+      {
+        deviceName: "/dev/xvda",
+        ebs: {
+          deleteOnTermination: true,
+          volumeSize: 25,
+          volumeType: "gp2",
+        },
+      },
+    ],
+
+    networkInterfaces: [
+      {
+        associatePublicIpAddress: true,
+        deleteOnTermination: true,
+        securityGroups: [EC2SecurityGroup.id],
+      },
+    ],
+
+    tagSpecifications: [
+      {
+        resourceType: "instance",
+        tags: {
+          Name: "asg_launch_config",
+        },
+      },
+    ],
+
+    userData: userData.apply((data: WithImplicitCoercion<ArrayBuffer | SharedArrayBuffer>) =>
+      Buffer.from(data).toString("base64")
+    ),
+  });
+
+ 
+  // Creating Load Balancer
+  const loadbalancer = new aws.lb.LoadBalancer("webAppLB", {
+    name: "csye6225-lb",
+    internal: false,
+    loadBalancerType: "application",
+    securityGroups: [loadBalancerSecurityGroup.id],
+    subnets: publicSubnets,
+    enableDeletionProtection: false,
     tags: {
-      Name: "web-app Pulumi",
+      Application: "WebApp",
     },
   });
 
-  // creating an A record in route53
+  // Creating Target Group
+  const targetGroup = new aws.lb.TargetGroup("webAppTargetGroup", {
+    name: "csye6225-lb-tg",
+    port: 3000,
+    protocol: "HTTP",
+    vpcId: vpc.id,
+    targetType: "instance",
+    healthCheck: {
+      enabled: true,
+      path: "/healthz",
+      port: "traffic-port",
+      protocol: "HTTP",
+      healthyThreshold: 2,
+      unhealthyThreshold: 2,
+      timeout: 6,
+      interval: 30,
+    },
+  });
+
+  const listener = new aws.lb.Listener("webAppListener", {
+    loadBalancerArn: loadbalancer.arn,
+    port: "80",
+    protocol: "HTTP",
+    defaultActions: [
+      {
+        type: "forward",
+        targetGroupArn: targetGroup.arn,
+      },
+    ],
+  });
+
+  // Creating Auto Scaling Group
+  const autoScalingGroup = new aws.autoscaling.Group("autoScalingGroup", {
+    name: "asg_launch_config",
+    maxSize: 3,
+    minSize: 1,
+    desiredCapacity: 1,
+    forceDelete: true,
+    defaultCooldown: 60,
+    vpcZoneIdentifiers: publicSubnets,
+    instanceProfile: instanceProfile.name,
+
+    tags: [
+      {
+        key: "Name",
+        value: "asg_launch_config",
+        propagateAtLaunch: true,
+      },
+    ],
+
+    launchTemplate: {
+      id: launchtemplate.id,
+      version: "$Latest",
+    },
+    dependsOn: [targetGroup],
+    targetGroupArns: [targetGroup.arn],
+  });
+
+  const scaleUpPolicy = new aws.autoscaling.Policy("scaleUpPolicy", {
+    autoscalingGroupName: autoScalingGroup.name,
+    scalingAdjustment: 1,
+    cooldown: 60,
+    adjustmentType: "ChangeInCapacity",
+    //estimatedInstanceWarmup: 60,
+    autocreationCooldown: 60,
+    cooldownDescription: "Scale up policy when average CPU usage is above 5%",
+    policyType: "SimpleScaling",
+    scalingTargetId: autoScalingGroup.id,
+  });
+
+  const scaleDownPolicy = new aws.autoscaling.Policy("scaleDownPolicy", {
+    autoscalingGroupName: autoScalingGroup.name,
+    scalingAdjustment: -1,
+    cooldown: 60,
+    adjustmentType: "ChangeInCapacity",
+    //estimatedInstanceWarmup: 60,
+    autocreationCooldown: 60,
+    cooldownDescription:
+      "Scale down policy when average CPU usage is below 3%",
+    policyType: "SimpleScaling",
+    scalingTargetId: autoScalingGroup.id,
+  });
+
+  const cpuUtilizationAlarmHigh = new aws.cloudwatch.MetricAlarm(
+    "cpuUtilizationAlarmHigh",
+    {
+      comparisonOperator: "GreaterThanThreshold",
+      evaluationPeriods: 1,
+      metricName: "CPUUtilization",
+      namespace: "AWS/EC2",
+      period: 60,
+      threshold: 5,
+      statistic: "Average",
+      alarmActions: [scaleUpPolicy.arn],
+      dimensions: { AutoScalingGroupName: autoScalingGroup.name },
+    }
+  );
+
+  const cpuUtilizationAlarmLow = new aws.cloudwatch.MetricAlarm(
+    "cpuUtilizationAlarmLow",
+    {
+      comparisonOperator: "LessThanThreshold",
+      evaluationPeriods: 1,
+      metricName: "CPUUtilization",
+      namespace: "AWS/EC2",
+      period: 60,
+      statistic: "Average",
+      threshold: 3,
+      alarmActions: [scaleDownPolicy.arn],
+      dimensions: { AutoScalingGroupName: autoScalingGroup.name },
+    }
+  );
+
+  // Creating an A record in route53
   const hostedZone = aws.route53.getZone({ name: route53Config.require("domainName") });
 
-  const aRecord = new route53.Record("aRecord", {
-    zoneId: hostedZone.then((zone: { zoneId: any; }) => zone.zoneId), // Replace with your hosted zone ID
-    name: route53Config.require("domainName"), // Replace with your desired domain/subdomain
+  new aws.route53.Record(`aRecord`, {
+    name: route53Config.require("domainName"),
     type: "A",
-    ttl: 300, // Replace with your desired TTL
-    records: [instance.publicIp], // Assumes ec2Instance has a public IP assigned
-    dependsOn: [instance],
+    zoneId: hostedZone.then((zone: { zoneId: any; }) => zone.zoneId),
+    aliases: [
+      {
+        name: loadbalancer.dnsName,
+        zoneId: loadbalancer.zoneId,
+        evaluateTargetHealth: true,
+      },
+    ],
   });
 };
 
