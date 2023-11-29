@@ -1,15 +1,17 @@
 config:
+  ami:owners: "773453770225"
   aws:profile: prod
   aws:region: us-west-1
+  domainName: demo.sparshramchandani.me
+  gcp:project: demogcp-406221
   keyName:key: demo-us-west-1
-  ami:owners: 773453770225
-  rds:engine: postgres
-  rds:instanceClass: db.t3.micro
-  rds:allocatedStorage: 20
-  rds:engineVersion: 15
-  rds:storageType: "gp2"
+  rds:allocatedStorage: "20"
   rds:dbName: "csye6225"
-  rds:username: "csye6225"
+  rds:engine: postgres
+  rds:engineVersion: "15"
+  rds:instanceClass: db.t3.micro
   rds:password: "postgres"
-  rds:port: 5432
+  rds:port: "5432"
+  rds:storageType: "gp2"
+  rds:username: "csye6225"
   route53:domainName: demo.sparshramchandani.me

@@ -13,3 +13,4 @@ config:
   rds:password: "postgres"
   rds:port: 5432
   route53:domainName: dev.sparshramchandani.me
+  gcp:project: devgcp-406221
