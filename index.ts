@@ -207,6 +207,7 @@ const lambdaFunction = new aws.lambda.Function("LambdaFunction", {
   role: lambdaRole.arn,
   runtime: "nodejs16.x",
   handler: "index.handler",
+  timeout: 300,
   code: new pulumi.asset.FileArchive("/Users/sparshramchandani/Documents/Sem_4/Cloud/Assignments/Assignment_9/serverless-forked/serverless.zip"),
   environment: {
     variables: {
@@ -370,12 +371,6 @@ new aws.lambda.Permission("with_sns", {
       description: "Security group for the load balancer",
       vpcId: vpc.id,
       ingress: [
-        {
-          protocol: "tcp",
-          fromPort: 80,
-          toPort: 80,
-          cidrBlocks: ["0.0.0.0/0"],
-        },
         {
           protocol: "tcp",
           fromPort: 443,
@@ -607,10 +602,19 @@ new aws.lambda.Permission("with_sns", {
     },
   });
 
+  const certificate = await aws.acm.getCertificate({
+    domain: route53Config.require("domainName"),
+    mostRecent: true,
+  });
+
+  // Creating Listener
   const listener = new aws.lb.Listener("webAppListener", {
     loadBalancerArn: loadbalancer.arn,
-    port: "80",
-    protocol: "HTTP",
+    port: "443",
+    protocol: "HTTPS",
+    sslPolicy: "ELBSecurityPolicy-2016-08",
+    forceDestroy: true,
+    certificateArn: certificate.arn,
     defaultActions: [
       {
         type: "forward",
@@ -718,9 +722,16 @@ new aws.lambda.Permission("with_sns", {
     ],
   });
 
-  
+  return new Promise((resolve) => {
+    setTimeout(() => {
+      resolve({ value1: vpc.id, value2: launchtemplate.id });
+    }, 1000);
+  });
+
 };
 
-createVpcAndSubnets();
+const promise: Promise<{ value1: string; value2: string }> = createVpcAndSubnets() as Promise<{ value1: string; value2: string }>;
 
-exports.vpcId = vpc.id;
+// Exporting the VPC ID
+export const vpcId = promise.then((result) => result.value1);
+export const launchTemplateId = promise.then((result) => result.value2);
