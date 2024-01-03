@@ -1,7 +1,7 @@
 config:
   aws:profile: dev
   aws:region: us-west-1
-  ami:owners: 773453770225
+  ami:owners: AMI Owner //Change this
   keyName:key: dev-us-west-1
   rds:engine: postgres
   rds:instanceClass: db.t3.micro
@@ -10,7 +10,7 @@ config:
   rds:storageType: "gp2"
   rds:dbName: "csye6225"
   rds:username: "csye6225"
-  rds:password: "postgres"
+  rds:password: "rdsPassword" //Change this
   rds:port: 5432
-  route53:domainName: dev.sparshramchandani.me
-  gcp:project: devgcp-406221
+  route53:domainName: yourDomainName //Change this
+  gcp:project: gcpProjectID //Change this
